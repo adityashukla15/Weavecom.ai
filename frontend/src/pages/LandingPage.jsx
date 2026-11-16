@@ -17,6 +17,7 @@ export default function LandingPage() {
               <a href="#pv-features">Features</a>
               <Link to="/community">Community</Link>
             </div>
+            <Link className="pv-btn" to="/login">Sign in</Link>
             <Link className="pv-btn pv-pri" to="/comic">Start Creating</Link>
           </div>
         </div>

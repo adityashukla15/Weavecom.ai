@@ -1,21 +1,30 @@
 import { useEffect, useState } from 'react';
-import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../common/Icon.jsx';
 import { useToast } from '../../context/ToastContext.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 
-const navigation = [
+const writerNavigation = [
   ['dashboard', 'Dashboard', 'grid'],
   ['story', 'Story Studio', 'pen'],
   ['universe', 'Universe Explorer', 'globe'],
   ['comic', 'Comic Editor', 'panel'],
+  ['characters', 'Character Studio', 'user'],
+  ['assistant', 'Project Assistant', 'burst'],
   ['community', 'Community', 'user'],
   ['marketplace', 'Marketplace', 'tag'],
 ];
 
 export default function AppLayout() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const { user, signOut } = useAuth();
   const toast = useToast();
   const isHome = pathname === '/';
+  const navigation = user?.role === 'reader'
+    ? [['assistant', 'Project Assistant', 'burst'], ['community', 'Community', 'user']]
+    : writerNavigation;
+  const showNavigation = !isHome;
   const [menuOpen, setMenuOpen] = useState(false);
 
   useEffect(() => {
@@ -34,9 +43,19 @@ export default function AppLayout() {
     setMenuOpen(false);
   }, [pathname]);
 
+  async function handleSignOut() {
+    try {
+      await signOut();
+      navigate('/login', { replace: true });
+    } catch {
+      toast('You were signed out locally, but the server could not end the remote session.');
+      navigate('/login', { replace: true });
+    }
+  }
+
   return (
     <>
-      {!isHome && (
+      {showNavigation && (
         <nav className={`side${menuOpen ? ' menu-open' : ''}`} aria-label="Main navigation">
           <div className="mobile-nav-header">
             <Link to="/" className="logo">
@@ -61,11 +80,16 @@ export default function AppLayout() {
                 <Icon name={icon} size={17} /> {label}
               </NavLink>
             ))}
-            {['Assets', 'Settings'].map((label) => (
+            {user?.role === 'writer' && ['Assets', 'Settings'].map((label) => (
               <button className="sl" key={label} onClick={() => toast(`${label} is not built in this demo`)}>
                 <Icon name="burst" size={17} /> {label}
               </button>
             ))}
+            <div className="auth-nav-account">
+              <span className="mu">{user?.email}</span>
+              <span className="tag">{user?.role}</span>
+              <button className="sl" type="button" onClick={handleSignOut}>Sign out</button>
+            </div>
           </div>
         </nav>
       )}

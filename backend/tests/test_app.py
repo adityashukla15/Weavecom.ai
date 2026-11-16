@@ -77,6 +77,12 @@ def test_configuration_does_not_require_optional_provider_keys() -> None:
     assert settings.supabase_enabled is False
 
 
+def test_gemini_image_model_default_is_account_supported_image_model() -> None:
+    settings = make_settings()
+
+    assert settings.gemini_image_model == "gemini-3.1-flash-image"
+
+
 def test_enabled_supabase_configuration_does_not_require_publishable_key() -> None:
     settings = make_settings(
         supabase_enabled=True,

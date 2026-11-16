@@ -1,18 +1,37 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import CharacterArt from '../components/common/CharacterArt.jsx';
-import { characters } from '../data/demoData.js';
-import { useAppData } from '../context/AppContext.jsx';
+import { getErrorMessage } from '../api/errors.js';
+import { projectService } from '../api/services/projectService.js';
 import { useToast } from '../context/ToastContext.jsx';
 
 export default function Dashboard() {
-  const { projects, setProjects } = useAppData();
-  const toast = useToast();
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [genre, setGenre] = useState('Fantasy');
+  const [description, setDescription] = useState('');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
   const dialogRef = useRef(null);
+  const toast = useToast();
+
+  const loadProjects = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setProjects(await projectService.listAccessible());
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadProjects();
+  }, [loadProjects]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -21,18 +40,32 @@ export default function Dashboard() {
     if (!dialogOpen && dialog.open) dialog.close();
   }, [dialogOpen]);
 
-  function createProject(event) {
+  async function createProject(event) {
     event.preventDefault();
     const name = title.trim();
     if (name.length < 3) {
-      setError('Title needs at least 3 characters.');
+      setError('Project title needs at least 3 characters.');
       return;
     }
-    setProjects((current) => [{ n: name, st: 'Draft', pg: 0, of: 20 }, ...current]);
-    setDialogOpen(false);
-    setTitle('');
+    setSaving(true);
     setError('');
-    toast(`Comic created · ${genre}`);
+    try {
+      const project = await projectService.createProject({
+        title: name,
+        description: description.trim(),
+        genre,
+        status: 'draft',
+      });
+      setProjects((current) => [project, ...current]);
+      setDialogOpen(false);
+      setTitle('');
+      setDescription('');
+      toast('Project saved');
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -40,17 +73,16 @@ export default function Dashboard() {
       <div className="row sp">
         <div>
           <h1>Welcome back, creator</h1>
-          <span className="mu">{projects.length} projects · {characters.length} characters</span>
+          <span className="mu">{projects.length} saved projects</span>
         </div>
-        <button className="btn" onClick={() => setDialogOpen(true)}>Create new comic</button>
+        <button className="btn" type="button" onClick={() => { setError(''); setDialogOpen(true); }}>Create project</button>
       </div>
 
       <div className="grid" style={{ margin: '20px 0' }}>
         {[
-          ['Pages drawn', 51],
-          ['Characters', characters.length],
-          ['AI edits accepted', 38],
-          ['Storage', '2.1 / 10 GB'],
+          ['Projects', projects.length],
+          ['Drafts', projects.filter((project) => project.status === 'draft').length],
+          ['Published', projects.filter((project) => project.status === 'published').length],
         ].map(([label, value]) => (
           <div className="card" key={label}>
             <div className="mu">{label}</div>
@@ -59,43 +91,59 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <h3>Projects</h3>
-      {projects.length ? (
+      <div className="row sp">
+        <h2>Projects</h2>
+        <Link className="btn g sm" to="/assistant">Ask Project Assistant</Link>
+      </div>
+      {error && <p className="auth-error" role="alert">{error} <button type="button" className="btn g sm" onClick={loadProjects}>Retry</button></p>}
+      {loading ? (
+        <div className="card mu" role="status">Loading saved projects…</div>
+      ) : projects.length ? (
         <div className="grid" style={{ marginTop: 10 }}>
           {projects.map((project, index) => (
-            <Link to="/comic" className="card landing-link" key={`${project.n}-${index}`}>
-              <CharacterArt index={index} label={project.n} />
+            <article className="card" key={project.id}>
+              <CharacterArt index={index} label={project.title} />
               <div className="row sp" style={{ marginTop: 10 }}>
-                <b>{project.n}</b>
-                <span className="tag" style={{ color: project.st === 'Published' ? 'var(--ok)' : 'var(--wa)' }}>{project.st}</span>
+                <b>{project.title}</b>
+                <span className="tag" style={{ color: project.status === 'published' ? 'var(--ok)' : 'var(--wa)' }}>{project.status}</span>
               </div>
-              <div style={{ height: 5, background: 'var(--bg2)', borderRadius: 3, marginTop: 8 }}>
-                <div style={{ height: '100%', width: `${project.pg / project.of * 100}%`, background: 'var(--p)', borderRadius: 3 }} />
+              <p className="mu">{project.description || 'No description yet.'}</p>
+              <span className="mu" style={{ fontSize: 13 }}>
+                {project.genre || 'Uncategorized'} · {project.page_count}/{project.page_target} pages
+              </span>
+              <div className="row button-row" style={{ marginTop: 10 }}>
+                <Link className="btn g sm" to="/characters">Characters</Link>
+                <Link className="btn g sm" to="/story">Stories</Link>
+                <Link className="btn g sm" to="/comic">Comics</Link>
               </div>
-              <span className="mu" style={{ fontSize: 13 }}>{project.pg}/{project.of} pages</span>
-            </Link>
+            </article>
           ))}
         </div>
       ) : (
-        <div className="card" style={{ textAlign: 'center', padding: 40 }}>No comics yet. Create your first project to begin.</div>
+        <div className="card" style={{ textAlign: 'center', padding: 40 }}>
+          <h3>No saved projects yet</h3>
+          <p className="mu">Create a project to start saving characters, stories, and comics.</p>
+          <button className="btn" type="button" onClick={() => setDialogOpen(true)}>Create your first project</button>
+        </div>
       )}
 
-      <h3 style={{ margin: '24px 0 10px' }}>Recent AI activity</h3>
-      <div className="card mu">Plot check on “Chronicles of Kaito”: 3 findings · Character match: Hana Mirei (suggested) · Panel 4 regenerated (demo)</div>
-
       {dialogOpen && (
-        <dialog ref={dialogRef} className="dialog-card" aria-labelledby="new-comic-title" onClose={() => setDialogOpen(false)}>
+        <dialog ref={dialogRef} className="dialog-card" aria-labelledby="new-project-title" onClose={() => setDialogOpen(false)}>
           <form onSubmit={createProject}>
-            <h3 id="new-comic-title">New comic</h3>
-            <p className="mu">Give it a title and genre.</p>
-            <input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Title" aria-label="Title" />
-            <div className="modal-error" role="alert">{error}</div>
-            <select value={genre} onChange={(event) => setGenre(event.target.value)} aria-label="Genre">
-              {['Fantasy', 'Sci-fi', 'Noir', 'Horror'].map((option) => <option key={option}>{option}</option>)}
+            <h3 id="new-project-title">New project</h3>
+            <p className="mu">Create a project to organize your saved story and character work.</p>
+            <label htmlFor="project-title">Title</label>
+            <input id="project-title" autoFocus required minLength={3} maxLength={160} value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Project title" />
+            <label htmlFor="project-description">Description</label>
+            <textarea id="project-description" rows="3" maxLength={1000} value={description} onChange={(event) => setDescription(event.target.value)} />
+            <label htmlFor="project-genre">Genre</label>
+            <select id="project-genre" value={genre} onChange={(event) => setGenre(event.target.value)}>
+              {['Fantasy', 'Sci-fi', 'Noir', 'Horror', 'Other'].map((option) => <option key={option}>{option}</option>)}
             </select>
+            {error && <p className="modal-error" role="alert">{error}</p>}
             <div className="row" style={{ marginTop: 14, justifyContent: 'flex-end' }}>
               <button type="button" className="btn g" onClick={() => { setDialogOpen(false); setError(''); }}>Cancel</button>
-              <button type="submit" className="btn">Create comic</button>
+              <button type="submit" className="btn" disabled={saving}>{saving ? 'Saving…' : 'Create project'}</button>
             </div>
           </form>
         </dialog>

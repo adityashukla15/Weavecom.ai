@@ -21,6 +21,7 @@ if (configuredBaseUrl) {
 }
 
 const baseUrl = configuredBaseUrl.replace(/\/+$/, '');
+export const isApiConfigured = Boolean(baseUrl);
 
 export function setAccessToken(token) {
   accessToken = token || null;
@@ -75,7 +76,12 @@ export async function request(path, { method = 'GET', body, headers, signal } = 
       credentials: 'omit',
     });
     const payload = await readPayload(response);
-    if (!response.ok) throw createHttpError(response, payload);
+    if (!response.ok) {
+      if (response.status === 401) {
+        window.dispatchEvent(new Event('panelverse:unauthorized'));
+      }
+      throw createHttpError(response, payload);
+    }
     return payload;
   } catch (error) {
     if (error instanceof ApiError) throw error;

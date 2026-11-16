@@ -101,12 +101,432 @@ nav.side .mobile-nav-links {
   margin-top: 8px;
 }
 
+.comic-editor-page {
+  display: grid;
+  gap: 14px;
+}
+
+.comic-workspace {
+  display: grid;
+  grid-template-columns: minmax(190px, 240px) minmax(350px, 1fr) minmax(270px, 360px);
+  gap: 12px;
+  align-items: start;
+}
+
+.comic-library,
+.comic-main,
+.comic-preview-column {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.comic-library-item {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 10px;
+  text-align: left;
+  color: var(--tx);
+  background: var(--bg2);
+  border: 1px solid var(--ln);
+  border-radius: 8px;
+}
+
+.comic-library-item.selected {
+  border-color: var(--p);
+  background: var(--card2);
+}
+
+.comic-create-form,
+.comic-meta-form,
+.comic-panel-form,
+.comic-bubble-form,
+.comic-bubble-edit {
+  display: grid;
+  gap: 8px;
+}
+
+.comic-create-form,
+.comic-bubble-list {
+  padding-top: 10px;
+  border-top: 1px solid var(--ln);
+}
+
+.comic-panel-stack,
+.comic-bubble-list {
+  display: grid;
+  gap: 10px;
+}
+
+.comic-panel-editor {
+  display: grid;
+  gap: 12px;
+}
+
+.comic-panel-editor h3,
+.comic-panels-heading h2 {
+  margin: 0;
+}
+
+.comic-panel-layout {
+  align-items: end;
+}
+
+.comic-panel-layout label {
+  flex: 1 1 90px;
+}
+
+.comic-panel-layout input[type="color"] {
+  height: 38px;
+  padding: 3px;
+}
+
+.comic-bubble-edit {
+  padding: 10px;
+  background: var(--bg2);
+  border: 1px solid var(--ln);
+  border-radius: 8px;
+}
+
+.comic-position {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+
+.comic-position input {
+  width: 68px;
+}
+
+.comic-preview-page {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+  min-height: 260px;
+  padding: 12px;
+  background: #e8e4dc;
+  border: 2px solid #111;
+  box-shadow: 4px 4px 0 #111;
+}
+
+.comic-preview-panel {
+  position: relative;
+  grid-row: span 1;
+  min-width: 0;
+  overflow: hidden;
+  border: 2px solid #111;
+  color: #111;
+}
+
+.comic-preview-panel img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.comic-preview-number {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  z-index: 1;
+  padding: 2px 5px;
+  background: #fff;
+  border: 1px solid #111;
+  font-size: 11px;
+}
+
+.comic-preview-description {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  left: 6px;
+  z-index: 1;
+  margin: 0;
+  padding: 5px;
+  background: #fff9;
+  font-size: 12px;
+}
+
+.comic-preview-bubble {
+  position: absolute;
+  z-index: 2;
+  max-width: 65%;
+  padding: 6px 9px;
+  transform: translate(-50%, -50%);
+  background: #fff;
+  border: 2px solid #111;
+  border-radius: 45%;
+  color: #111;
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.comic-preview-bubble.thought {
+  border-style: dashed;
+}
+
+.comic-preview-bubble.narration {
+  border-radius: 2px;
+  background: #fbbf24;
+}
+
+.comic-preview-empty {
+  grid-column: 1 / -1;
+  align-self: center;
+  text-align: center;
+}
+
+.comic-panels-heading {
+  margin-top: 8px;
+}
+
+.comic-details h2 {
+  margin: 8px 0 2px;
+}
+
+.comic-details p {
+  margin: 4px 0;
+}
+
+.comic-empty {
+  min-height: 180px;
+  align-content: center;
+  justify-items: center;
+}
+
+.project-assistant {
+  display: grid;
+  gap: 14px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+.project-assistant header h1,
+.assistant-answer h2,
+.assistant-answer h3,
+.assistant-empty h2 {
+  margin-top: 0;
+}
+
+.project-assistant header p,
+.assistant-answer p,
+.assistant-empty p {
+  margin-bottom: 0;
+}
+
+.assistant-question {
+  display: grid;
+  gap: 10px;
+}
+
+.assistant-question textarea {
+  resize: vertical;
+}
+
+.assistant-question .btn {
+  justify-self: start;
+}
+
+.assistant-answer {
+  overflow-wrap: anywhere;
+}
+
+.assistant-answer ul {
+  display: grid;
+  gap: 8px;
+  padding-left: 20px;
+}
+
+.assistant-answer li .tag {
+  margin-right: 6px;
+}
+
+.assistant-empty {
+  text-align: center;
+}
+
 .listing-card {
   min-width: 0;
 }
 
 .canon-conflict {
   color: var(--wa);
+}
+
+.auth-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-card {
+  width: min(440px, 100%);
+  display: grid;
+  gap: 14px;
+}
+
+.auth-card h1 {
+  font-size: 34px;
+}
+
+.auth-logo {
+  justify-self: start;
+  color: var(--tx);
+  font: 400 26px Bangers, Impact, sans-serif;
+  letter-spacing: .05em;
+  text-decoration: none;
+}
+
+.auth-logo i {
+  color: var(--p);
+  font-style: normal;
+}
+
+.auth-card form {
+  display: grid;
+  gap: 8px;
+}
+
+.auth-submit {
+  justify-content: center;
+  margin-top: 6px;
+}
+
+.auth-error {
+  color: var(--bad);
+}
+
+.auth-message {
+  color: var(--ok);
+}
+
+.auth-switch,
+.auth-home {
+  margin: 0;
+}
+
+.auth-nav-account {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: auto 8px 0;
+  flex-wrap: wrap;
+}
+
+.character-studio-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.character-list {
+  align-self: start;
+  display: grid;
+  gap: 10px;
+}
+
+.character-list-item {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 10px;
+  text-align: left;
+  color: var(--tx);
+  background: var(--bg2);
+  border: 1px solid var(--ln);
+  border-radius: 8px;
+}
+
+.character-list-item.selected {
+  border-color: var(--p);
+  background: var(--card2);
+}
+
+.character-main {
+  min-width: 0;
+}
+
+.character-detail,
+.character-form {
+  display: grid;
+  gap: 12px;
+}
+
+.character-detail p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.character-reference {
+  width: 112px;
+  height: 140px;
+  object-fit: cover;
+  border: 2px solid var(--p);
+  border-radius: 8px;
+}
+
+.character-empty {
+  padding: 12px 0;
+}
+
+.story-studio-layout {
+  margin-top: 14px;
+  align-items: start;
+}
+
+.story-list {
+  display: grid;
+  gap: 8px;
+}
+
+.story-list-item {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 9px;
+  text-align: left;
+  color: var(--tx);
+  background: var(--bg2);
+  border: 1px solid var(--ln);
+  border-radius: 8px;
+}
+
+.story-list-item.selected {
+  border-color: var(--p);
+  background: var(--card2);
+}
+
+.story-editor,
+.story-detail {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.story-field {
+  flex: 1 1 140px;
+}
+
+.story-plot {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.story-note {
+  padding: 10px;
+  color: var(--mu);
+  font-size: 13px;
+}
+
+.story-empty {
+  padding: 10px 0;
 }
 
 @media (max-width: 1000px) {
@@ -193,6 +613,18 @@ nav.side .mobile-nav-links {
   }
 
   .studio {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .character-studio-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .story-studio-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .comic-workspace {
     grid-template-columns: minmax(0, 1fr);
   }
 

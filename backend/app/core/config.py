@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     adaption_model: str = "deepseek-v4-flash"
 
     gemini_api_key: SecretStr | None = None
-    gemini_image_model: str = "imagen-3.0-generate-002"
+    gemini_image_model: str = "gemini-3.1-flash-image"
 
     supabase_enabled: bool = False
     supabase_url: str | None = None

@@ -1,416 +1,497 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import Konva from 'konva';
-import { characterImages } from '../assets/images.js';
-import { characters } from '../data/demoData.js';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { getErrorMessage } from '../api/errors.js';
+import { comicService } from '../api/services/comicService.js';
+import { storyService } from '../api/services/storyService.js';
 import { useToast } from '../context/ToastContext.jsx';
 
-const initialItems = [
-  { id: 1, t: 'panel', x: 30, y: 30, w: 260, h: 200, fill: '#ffffff' },
-  { id: 2, t: 'panel', x: 310, y: 30, w: 260, h: 200, fill: '#e6e6e6' },
-  { id: 3, t: 'panel', x: 30, y: 250, w: 540, h: 300, fill: '#cfcfcf' },
-  { id: 5, t: 'face', x: 150, y: 70, w: 120, h: 156, v: 0, e: 'angry' },
-  { id: 4, t: 'bubble', x: 50, y: 50, w: 140, h: 50, text: 'The storm is coming.', fill: '#fff' },
-];
+const blankComic = { story_id: '', title: '', description: '', status: 'draft' };
+const blankPanel = { description: '', image_url: '', layout: { width: 3, height: 2, background: '#f4f1ea' } };
+const blankBubble = { text: '', bubble_type: 'speech', position_x: 50, position_y: 22 };
 
-const objectKinds = ['panel', 'bubble', 'thought', 'narr', 'sfx', 'face'];
-
-function speechShape(item) {
-  return new Konva.Shape({
-    fill: item.fill,
-    stroke: '#000',
-    strokeWidth: 2.5,
-    dash: item.t === 'thought' ? [6, 4] : [],
-    sceneFunc(context, shape) {
-      const { w, h } = item;
-      const point = (angle, scale) => [
-        w / 2 + w / 2 * scale * Math.cos(angle),
-        h / 2 + h / 2 * scale * Math.sin(angle),
-      ];
-      const segments = 9;
-      context.beginPath();
-      context.moveTo(...point(0, 0.9));
-      for (let index = 0; index < segments; index += 1) {
-        const end = point((index + 1) / segments * 6.2832, 0.9);
-        const control = point((index + 0.5) / segments * 6.2832, 1.22);
-        context.quadraticCurveTo(control[0], control[1], end[0], end[1]);
-      }
-      context.closePath();
-      if (item.t === 'bubble') {
-        context.moveTo(w * 0.28, h * 0.8);
-        context.lineTo(w * 0.14, h + 16);
-        context.lineTo(w * 0.5, h * 0.88);
-      }
-      context.fillStrokeShape(shape);
+function PanelEditor({ panel, comicId, onRefresh, onPanelAction, setError }) {
+  const [values, setValues] = useState({
+    description: panel.description,
+    image_url: panel.image_url ?? '',
+    layout: {
+      width: Number(panel.layout?.width) || 3,
+      height: Number(panel.layout?.height) || 2,
+      background: panel.layout?.background || '#f4f1ea',
     },
   });
-}
-
-function makeNode(item, onSelect, onChange) {
-  const group = new Konva.Group({
-    x: item.x,
-    y: item.y,
-    draggable: true,
-    name: 'comic-item',
-    id: `i${item.id}`,
-  });
-
-  if (item.t === 'panel') {
-    group.add(new Konva.Rect({
-      width: item.w,
-      height: item.h,
-      fill: item.fill,
-      stroke: '#000',
-      strokeWidth: 4,
-    }));
-    if (item.extra) {
-      group.add(new Konva.Text({
-        x: 8,
-        y: 8,
-        text: item.extra,
-        fill: '#111',
-        fontSize: 14,
-        fontFamily: 'Inter',
-      }));
-    }
-  } else if (item.t === 'face') {
-    const image = new window.Image();
-    image.onload = () => group.getLayer()?.batchDraw();
-    image.src = characterImages[item.v % 10];
-    group.add(new Konva.Image({ image, width: item.w, height: item.h }));
-  } else {
-    let shape;
-    if (item.t === 'narr') {
-      shape = new Konva.Rect({ width: item.w, height: item.h, fill: '#FBBF24', stroke: '#000', strokeWidth: 2 });
-    } else if (item.t === 'sfx') {
-      shape = new Konva.Star({
-        x: item.w / 2,
-        y: item.h / 2,
-        numPoints: 12,
-        innerRadius: item.h * 0.33,
-        outerRadius: item.w / 2,
-        fill: '#fff',
-        stroke: '#000',
-        strokeWidth: 3,
-      });
-    } else {
-      shape = speechShape(item);
-    }
-    group.add(shape);
-    group.add(new Konva.Text({
-      width: item.w,
-      height: item.h,
-      text: item.text,
-      align: 'center',
-      verticalAlign: 'middle',
-      fontSize: item.fs || 13,
-      fontFamily: item.t === 'sfx' ? 'Bangers' : 'Inter',
-      fontStyle: item.t === 'sfx' ? 'normal' : 'bold',
-      fill: '#111',
-      padding: 8,
-    }));
-  }
-
-  group.on('click tap', () => onSelect(item.id));
-  group.on('dragend transformend', () => {
-    const next = {
-      ...item,
-      x: group.x(),
-      y: group.y(),
-      w: Math.round(item.w * group.scaleX()),
-      h: Math.round(item.h * group.scaleY()),
-    };
-    group.scale({ x: 1, y: 1 });
-    onChange(item.id, next);
-  });
-  return group;
-}
-
-export default function ComicEditor() {
-  const canvasRef = useRef(null);
-  const stageRef = useRef(null);
-  const layerRef = useRef(null);
-  const contentRef = useRef(null);
-  const transformerRef = useRef(null);
-  const nextId = useRef(10);
-  const [items, setItems] = useState(initialItems);
-  const [selectedId, setSelectedId] = useState(null);
-  const [history, setHistory] = useState([initialItems]);
-  const [historyIndex, setHistoryIndex] = useState(0);
-  const [proposal, setProposal] = useState(null);
-  const [command, setCommand] = useState('');
+  const [bubble, setBubble] = useState(blankBubble);
   const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState('Unsaved');
-  const toast = useToast();
-  const selected = items.find((item) => item.id === selectedId);
-
-  const recordItems = useCallback((nextItems) => {
-    setItems(nextItems);
-    setHistory((current) => [...current.slice(0, historyIndex + 1), nextItems]);
-    setHistoryIndex((current) => current + 1);
-    setSaved('Unsaved');
-  }, [historyIndex]);
-
-  const changeItem = useCallback((id, update, record = false) => {
-    const nextItems = items.map((item) => (item.id === id ? { ...item, ...update } : item));
-    if (record) {
-      recordItems(nextItems);
-    } else {
-      setItems(nextItems);
-      setSaved('Unsaved');
-    }
-  }, [items, recordItems]);
 
   useEffect(() => {
-    const stage = new Konva.Stage({ container: canvasRef.current, width: 600, height: 580 });
-    const layer = new Konva.Layer();
-    const background = new Konva.Rect({ width: 600, height: 580, fill: '#f4f1ea' });
-    const content = new Konva.Group();
-    const transformer = new Konva.Transformer({
-      rotateEnabled: false,
-      borderStroke: '#9B6DFF',
-      anchorStroke: '#9B6DFF',
-    });
-    layer.add(background);
-    layer.add(content);
-    layer.add(transformer);
-    stage.add(layer);
-    stage.on('click tap', (event) => {
-      if (event.target === stage || event.target.getParent() === layer) setSelectedId(null);
-    });
-    stageRef.current = stage;
-    layerRef.current = layer;
-    contentRef.current = content;
-    transformerRef.current = transformer;
-
-    return () => {
-      stage.destroy();
-      stageRef.current = null;
-      layerRef.current = null;
-      contentRef.current = null;
-      transformerRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    const layer = layerRef.current;
-    const content = contentRef.current;
-    const transformer = transformerRef.current;
-    if (!layer || !content || !transformer) return;
-
-    content.destroyChildren();
-    items.forEach((item) => content.add(makeNode(
-      item,
-      setSelectedId,
-      (id, updated) => {
-        const nextItems = items.map((current) => (current.id === id ? updated : current));
-        recordItems(nextItems);
+    setValues({
+      description: panel.description,
+      image_url: panel.image_url ?? '',
+      layout: {
+        width: Number(panel.layout?.width) || 3,
+        height: Number(panel.layout?.height) || 2,
+        background: panel.layout?.background || '#f4f1ea',
       },
-    )));
-    const selectedNode = selectedId ? content.findOne(`#i${selectedId}`) : null;
-    transformer.nodes(selectedNode ? [selectedNode] : []);
-    layer.batchDraw();
-  }, [items, selectedId, recordItems]);
+    });
+  }, [panel]);
 
-  function addItem(type) {
-    const id = ++nextId.current;
-    const item = type === 'panel'
-      ? { id, t: type, x: 40, y: 40, w: 200, h: 150, fill: '#ffffff' }
-      : type === 'face'
-        ? { id, t: type, x: 60, y: 60, w: 120, h: 156, v: id % 10, e: 'neutral' }
-        : {
-          id,
-          t: type,
-          x: 60,
-          y: 60,
-          w: type === 'sfx' ? 120 : 150,
-          h: type === 'sfx' ? 120 : 60,
-          text: type === 'narr' ? 'Meanwhile…' : type === 'sfx' ? 'WHAM!' : 'New text',
-          fill: '#fff',
-        };
-    recordItems([...items, item]);
-    setSelectedId(id);
-  }
-
-  function undoRedo(direction) {
-    const target = Math.max(0, Math.min(history.length - 1, historyIndex + direction));
-    if (target === historyIndex) return;
-    setHistoryIndex(target);
-    setItems(history[target]);
-    setSelectedId(null);
-  }
-
-  function deleteSelected() {
-    if (!selected) return;
-    recordItems(items.filter((item) => item.id !== selected.id));
-    setSelectedId(null);
-  }
-
-  function saveDraft() {
-    setSaved('Saved in this session only (no backend)');
-    toast('Draft kept in this session');
-  }
-
-  function exportPng() {
-    const stage = stageRef.current;
-    if (!stage) return;
-    transformerRef.current.nodes([]);
-    stage.toDataURL({ pixelRatio: 2, callback(dataUrl) {
-      const link = document.createElement('a');
-      link.download = 'page1.png';
-      link.href = dataUrl;
-      link.click();
-      setSelectedId(null);
-    } });
-  }
-
-  async function proposeEdit(event) {
+  async function savePanel(event) {
     event.preventDefault();
-    const value = command.toLowerCase().trim();
-    if (!value) return;
     setBusy(true);
-    setProposal(null);
-    await new Promise((resolve) => window.setTimeout(resolve, 800));
-    const lastPanel = [...items].reverse().find((item) => item.t === 'panel');
-    let suggestion = null;
-    if (lastPanel && /large|bigger/.test(value)) {
-      suggestion = {
-        label: 'Enlarge the last panel by 20%',
-        apply: (current) => current.map((item) => item.id === lastPanel.id
-          ? { ...item, w: item.w * 1.2, h: item.h * 1.2 }
-          : item),
-      };
-    } else if (lastPanel && /storm|cloud|rain|dramatic/.test(value)) {
-      suggestion = {
-        label: 'Add a storm-cloud label and darken the last panel',
-        apply: (current) => current.map((item) => item.id === lastPanel.id
-          ? { ...item, fill: '#8a8a8a', extra: '⛈ storm clouds (placeholder art)' }
-          : item),
-      };
-    } else if (lastPanel && /anger|angry/.test(value)) {
-      suggestion = {
-        label: 'Tint the last panel red and tag expression: anger',
-        apply: (current) => current.map((item) => (
-          item.id === lastPanel.id
-            ? { ...item, fill: '#b0b0b0', extra: 'Kaito: anger' }
-            : item.t === 'face' ? { ...item, e: 'angry' } : item
-        )),
-      };
-    } else if (lastPanel && /close/.test(value)) {
-      suggestion = {
-        label: 'Mark last panel as close-up camera',
-        apply: (current) => current.map((item) => item.id === lastPanel.id
-          ? { ...item, extra: 'Camera: close-up' }
-          : item),
-      };
+    setError('');
+    try {
+      await comicService.updatePanel(comicId, panel.id, {
+        description: values.description,
+        image_url: values.image_url.trim() || null,
+        layout: values.layout,
+      });
+      await onRefresh();
+    } catch (error) {
+      setError(getErrorMessage(error));
+    } finally {
+      setBusy(false);
     }
-    setProposal(suggestion);
-    setBusy(false);
   }
 
-  function applyProposal() {
-    if (!proposal) return;
-    recordItems(proposal.apply(items));
-    setProposal(null);
-    toast('Edit applied');
+  async function addBubble(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await comicService.createBubble(comicId, panel.id, bubble);
+      setBubble(blankBubble);
+      await onRefresh();
+    } catch (error) {
+      setError(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateBubble(id, changes) {
+    setBusy(true);
+    setError('');
+    try {
+      await comicService.updateBubble(comicId, panel.id, id, changes);
+      await onRefresh();
+    } catch (error) {
+      setError(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteBubble(id) {
+    if (!window.confirm('Delete this dialogue bubble?')) return;
+    setBusy(true);
+    setError('');
+    try {
+      await comicService.deleteBubble(comicId, panel.id, id);
+      await onRefresh();
+    } catch (error) {
+      setError(getErrorMessage(error));
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
-    <>
-      <div className="row sp comic-toolbar">
-        <b>Chronicles of Kaito · Page 1</b>
+    <article className="card comic-panel-editor">
+      <div className="row sp">
+        <h3>Panel {panel.panel_number}</h3>
         <div className="row">
-          <span className="mu">{saved}</span>
-          <button className="btn g sm" onClick={() => undoRedo(-1)} disabled={historyIndex === 0}>Undo</button>
-          <button className="btn g sm" onClick={() => undoRedo(1)} disabled={historyIndex >= history.length - 1}>Redo</button>
-          <button className="btn g sm" onClick={saveDraft}>Save draft</button>
-          <button className="btn g sm" onClick={exportPng}>Export PNG</button>
+          <button className="btn g sm" type="button" onClick={() => onPanelAction('up', panel.id)} disabled={busy || panel.panel_number === 1}>↑</button>
+          <button className="btn g sm" type="button" onClick={() => onPanelAction('down', panel.id)} disabled={busy}>↓</button>
+          <button className="btn g sm" type="button" onClick={() => onPanelAction('delete', panel.id)} disabled={busy}>Delete panel</button>
         </div>
       </div>
-
-      <div className="studio">
-        <div className="card">
-          <b>Add</b>
-          <div className="comic-add">
-            {objectKinds.map((type) => (
-              <button className="btn g sm" onClick={() => addItem(type)} key={type}>
-                {type === 'panel' ? 'Panel'
-                  : type === 'bubble' ? 'Speech bubble'
-                    : type === 'thought' ? 'Thought bubble'
-                      : type === 'narr' ? 'Narration box'
-                        : type === 'sfx' ? 'SFX burst' : 'Character art'}
-              </button>
-            ))}
-          </div>
+      <form className="comic-panel-form" onSubmit={savePanel}>
+        <label>
+          Panel description
+          <textarea rows="3" maxLength={2000} value={values.description} onChange={(event) => setValues((current) => ({ ...current, description: event.target.value }))} placeholder="Describe the action and setting in this panel." />
+        </label>
+        <label>
+          Image URL (optional)
+          <input type="url" value={values.image_url} onChange={(event) => setValues((current) => ({ ...current, image_url: event.target.value }))} placeholder="https://…" />
+        </label>
+        <div className="row comic-panel-layout">
+          <label>Width units
+            <input type="number" min="1" max="6" value={values.layout.width} onChange={(event) => setValues((current) => ({ ...current, layout: { ...current.layout, width: Number(event.target.value) } }))} />
+          </label>
+          <label>Height units
+            <input type="number" min="1" max="6" value={values.layout.height} onChange={(event) => setValues((current) => ({ ...current, layout: { ...current.layout, height: Number(event.target.value) } }))} />
+          </label>
+          <label>Panel color
+            <input type="color" value={values.layout.background} onChange={(event) => setValues((current) => ({ ...current, layout: { ...current.layout, background: event.target.value } }))} />
+          </label>
         </div>
-        <div id="stage"><div id="cv" ref={canvasRef} /></div>
-        <div className="card" id="pr">
-          {selected ? (
-            <>
-              <b>{selected.t}</b>
-              <div className="mu" style={{ fontSize: 13 }}>{Math.round(selected.w)}×{Math.round(selected.h)}</div>
-              {selected.t === 'face' ? (
-                <label>Character
-                  <select
-                    className="character-select"
-                    value={selected.v}
-                    onChange={(event) => changeItem(selected.id, { v: Number(event.target.value) }, true)}
-                  >
-                    {characters.map((item, index) => <option value={index} key={item.n}>{item.n}</option>)}
+        <button className="btn g sm" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Save panel'}</button>
+      </form>
+
+      <div className="comic-bubble-list">
+        <b>Dialogue</b>
+        {panel.bubbles.map((item) => (
+          <BubbleEditor
+            key={item.id}
+            bubble={item}
+            busy={busy}
+            onSave={(changes) => updateBubble(item.id, changes)}
+            onDelete={() => deleteBubble(item.id)}
+          />
+        ))}
+        <form className="comic-bubble-form" onSubmit={addBubble}>
+          <textarea rows="2" maxLength={2000} required placeholder="Dialogue or narration…" value={bubble.text} onChange={(event) => setBubble((current) => ({ ...current, text: event.target.value }))} />
+          <div className="row">
+            <select aria-label="New bubble type" value={bubble.bubble_type} onChange={(event) => setBubble((current) => ({ ...current, bubble_type: event.target.value }))}>
+              <option value="speech">Speech</option>
+              <option value="thought">Thought</option>
+              <option value="narration">Narration</option>
+            </select>
+            <button className="btn g sm" type="submit" disabled={busy}>Add dialogue</button>
+          </div>
+        </form>
+      </div>
+    </article>
+  );
+}
+
+function BubbleEditor({ bubble, busy, onSave, onDelete }) {
+  const [text, setText] = useState(bubble.text);
+  const [type, setType] = useState(bubble.bubble_type);
+  const [x, setX] = useState(bubble.position_x);
+  const [y, setY] = useState(bubble.position_y);
+  useEffect(() => {
+    setText(bubble.text);
+    setType(bubble.bubble_type);
+    setX(bubble.position_x);
+    setY(bubble.position_y);
+  }, [bubble]);
+  return (
+    <div className="comic-bubble-edit">
+      <textarea rows="2" maxLength={2000} value={text} onChange={(event) => setText(event.target.value)} aria-label="Edit dialogue" />
+      <div className="row">
+        <select aria-label="Bubble type" value={type} onChange={(event) => setType(event.target.value)}>
+          <option value="speech">Speech</option>
+          <option value="thought">Thought</option>
+          <option value="narration">Narration</option>
+        </select>
+        <label className="comic-position">X % <input type="number" min="0" max="100" value={x} onChange={(event) => setX(Number(event.target.value))} /></label>
+        <label className="comic-position">Y % <input type="number" min="0" max="100" value={y} onChange={(event) => setY(Number(event.target.value))} /></label>
+      </div>
+      <div className="row">
+        <button className="btn g sm" type="button" disabled={busy} onClick={() => onSave({ text, bubble_type: type, position_x: x, position_y: y })}>Save dialogue</button>
+        <button className="btn g sm" type="button" disabled={busy} onClick={onDelete}>Delete</button>
+      </div>
+    </div>
+  );
+}
+
+function ComicPreview({ comic }) {
+  return (
+    <section className="comic-preview-page" aria-label="Comic page preview">
+      {comic.panels.map((panel) => (
+        <article
+          className="comic-preview-panel"
+          key={panel.id}
+          style={{
+            gridColumn: `span ${Math.min(6, Math.max(1, Number(panel.layout?.width) || 3))}`,
+            minHeight: `${Math.min(6, Math.max(1, Number(panel.layout?.height) || 2)) * 65}px`,
+            backgroundColor: panel.layout?.background || '#f4f1ea',
+          }}
+        >
+          {panel.image_url && <img src={panel.image_url} alt="" />}
+          <span className="comic-preview-number">{panel.panel_number}</span>
+          {panel.description && <p className="comic-preview-description">{panel.description}</p>}
+          {panel.bubbles.map((bubble) => (
+            <div
+              className={`comic-preview-bubble ${bubble.bubble_type}`}
+              key={bubble.id}
+              style={{ left: `${bubble.position_x}%`, top: `${bubble.position_y}%` }}
+            >
+              {bubble.text}
+            </div>
+          ))}
+        </article>
+      ))}
+      {!comic.panels.length && <div className="mu comic-preview-empty">Add a panel to preview your page.</div>}
+    </section>
+  );
+}
+
+export default function ComicEditor() {
+  const [stories, setStories] = useState([]);
+  const [comics, setComics] = useState([]);
+  const [comic, setComic] = useState(null);
+  const [creation, setCreation] = useState(blankComic);
+  const [editingMeta, setEditingMeta] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const toast = useToast();
+
+  const selectedComicId = comic?.id;
+  const currentStory = useMemo(
+    () => stories.find((story) => story.id === comic?.story_id),
+    [stories, comic?.story_id],
+  );
+
+  const loadWorkspace = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [storyRows, comicRows] = await Promise.all([storyService.list(), comicService.list()]);
+      setStories(storyRows);
+      setComics(comicRows);
+      const currentId = selectedComicId && comicRows.some((row) => row.id === selectedComicId)
+        ? selectedComicId
+        : comicRows[0]?.id;
+      const detail = currentId ? await comicService.get(currentId) : null;
+      setComic(detail);
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedComicId]);
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      setLoading(true);
+      setError('');
+      try {
+        const [storyRows, comicRows] = await Promise.all([storyService.list(), comicService.list()]);
+        const currentId = selectedComicId && comicRows.some((row) => row.id === selectedComicId)
+          ? selectedComicId
+          : comicRows[0]?.id;
+        const detail = currentId ? await comicService.get(currentId) : null;
+        if (active) {
+          setStories(storyRows);
+          setComics(comicRows);
+          setComic(detail);
+        }
+      } catch (cause) {
+        if (active) setError(getErrorMessage(cause));
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    void load();
+    return () => { active = false; };
+  }, [selectedComicId]);
+
+  async function refreshComic(id = comic?.id) {
+    if (!id) return;
+    const [detail, rows] = await Promise.all([comicService.get(id), comicService.list()]);
+    setComic(detail);
+    setComics(rows);
+  }
+
+  async function createComic(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const created = await comicService.create(creation);
+      setCreation(blankComic);
+      await refreshComic(created.id);
+      toast('Comic created');
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveComic(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      await comicService.update(comic.id, {
+        title: comic.title,
+        description: comic.description,
+        status: comic.status,
+      });
+      await refreshComic();
+      setEditingMeta(false);
+      toast('Comic saved');
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addPanel() {
+    setBusy(true);
+    setError('');
+    try {
+      await comicService.createPanel(comic.id, blankPanel);
+      await refreshComic();
+      toast('Panel added');
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changePanels(action, panelId) {
+    setError('');
+    try {
+      if (action === 'delete') {
+        if (!window.confirm('Delete this panel and all its dialogue?')) return;
+        await comicService.deletePanel(comic.id, panelId);
+      } else {
+        const ordered = [...comic.panels].sort((a, b) => a.panel_number - b.panel_number);
+        const index = ordered.findIndex((panel) => panel.id === panelId);
+        const target = action === 'up' ? index - 1 : index + 1;
+        if (index < 0 || target < 0 || target >= ordered.length) return;
+        [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+        await comicService.reorderPanels(comic.id, ordered.map((panel) => panel.id));
+      }
+      await refreshComic();
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    }
+  }
+
+  async function deleteComic() {
+    if (!comic || !window.confirm(`Delete "${comic.title}" and all its panels/dialogue?`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      await comicService.remove(comic.id);
+      setComic(null);
+      setComics((current) => current.filter((row) => row.id !== comic.id));
+      toast('Comic deleted');
+    } catch (cause) {
+      setError(getErrorMessage(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="comic-editor-page">
+      <div className="row sp comic-toolbar">
+        <div>
+          <h1>Comic Editor</h1>
+          <span className="mu">Build a page from your saved stories, panels, and dialogue.</span>
+        </div>
+        {comic && <button className="btn g sm" type="button" onClick={deleteComic} disabled={busy}>Delete comic</button>}
+      </div>
+      {error && <p className="auth-error" role="alert">{error} <button type="button" className="btn g sm" onClick={loadWorkspace}>Retry</button></p>}
+      {loading ? (
+        <div className="card mu" role="status">Loading comics…</div>
+      ) : (
+        <>
+          <div className="comic-workspace">
+            <aside className="card comic-library">
+              <b>Your comics</b>
+              {comics.map((row) => (
+                <button
+                  type="button"
+                  className={`comic-library-item${comic?.id === row.id ? ' selected' : ''}`}
+                  key={row.id}
+                  onClick={async () => {
+                    setError('');
+                    try { setComic(await comicService.get(row.id)); } catch (cause) { setError(getErrorMessage(cause)); }
+                  }}
+                >
+                  <strong>{row.title}</strong>
+                  <span className="mu">{row.story_title} · {row.status}</span>
+                </button>
+              ))}
+              {!comics.length && <p className="mu">Create a comic from a saved story.</p>}
+              <form className="comic-create-form" onSubmit={createComic}>
+                <b>New comic</b>
+                <label>Story
+                  <select required value={creation.story_id} onChange={(event) => {
+                    const selected = stories.find((story) => story.id === event.target.value);
+                    setCreation((current) => ({
+                      ...current,
+                      story_id: event.target.value,
+                      title: current.title || selected?.title || '',
+                    }));
+                  }}>
+                    <option value="">Select a story</option>
+                    {stories.map((story) => <option value={story.id} key={story.id}>{story.title}</option>)}
                   </select>
                 </label>
-              ) : selected.t === 'panel' ? (
-                <label>Colour
-                  <input type="color" value={selected.fill} onChange={(event) => changeItem(selected.id, { fill: event.target.value })} onBlur={() => recordItems(items)} />
+                <label>Title
+                  <input required maxLength={160} value={creation.title} onChange={(event) => setCreation((current) => ({ ...current, title: event.target.value }))} />
                 </label>
-              ) : (
-                <>
-                  <label>Text
-                    <textarea
-                      style={{ minHeight: 70 }}
-                      value={selected.text}
-                      onChange={(event) => changeItem(selected.id, { text: event.target.value })}
-                      onBlur={() => recordItems(items)}
+                <label>Description
+                  <textarea rows="2" maxLength={1000} value={creation.description} onChange={(event) => setCreation((current) => ({ ...current, description: event.target.value }))} />
+                </label>
+                <button className="btn sm" type="submit" disabled={busy || !stories.length}>Create comic</button>
+                {!stories.length && <span className="mu">Create a story first in Story Studio.</span>}
+              </form>
+            </aside>
+            {comic ? (
+              <main className="comic-main">
+                <section className="card comic-details">
+                  {editingMeta ? (
+                    <form className="comic-meta-form" onSubmit={saveComic}>
+                      <label>Comic title
+                        <input required maxLength={160} value={comic.title} onChange={(event) => setComic((current) => ({ ...current, title: event.target.value }))} />
+                      </label>
+                      <label>Description
+                        <textarea rows="2" maxLength={1000} value={comic.description} onChange={(event) => setComic((current) => ({ ...current, description: event.target.value }))} />
+                      </label>
+                      <label>Status
+                        <select value={comic.status} onChange={(event) => setComic((current) => ({ ...current, status: event.target.value }))}>
+                          <option value="draft">Draft</option>
+                          <option value="completed">Completed</option>
+                        </select>
+                      </label>
+                      <div className="row">
+                        <button className="btn sm" type="submit" disabled={busy}>Save comic</button>
+                        <button className="btn g sm" type="button" onClick={() => { setEditingMeta(false); void refreshComic(); }}>Cancel</button>
+                      </div>
+                    </form>
+                  ) : (
+                    <div className="row sp">
+                      <div>
+                        <span className="tag">{comic.status}</span>
+                        <h2>{comic.title}</h2>
+                        <p className="mu">{comic.description || 'No description'}{currentStory ? ` · Story: ${currentStory.title}` : ''}</p>
+                      </div>
+                      <button className="btn g sm" type="button" onClick={() => setEditingMeta(true)}>Edit details</button>
+                    </div>
+                  )}
+                </section>
+                <div className="row sp comic-panels-heading">
+                  <h2>Panels</h2>
+                  <button className="btn sm" type="button" onClick={addPanel} disabled={busy}>Add panel</button>
+                </div>
+                {!comic.panels.length && <div className="card mu">No panels yet. Add a panel to begin your page.</div>}
+                <div className="comic-panel-stack">
+                  {[...comic.panels].sort((a, b) => a.panel_number - b.panel_number).map((panel) => (
+                    <PanelEditor
+                      key={panel.id}
+                      panel={panel}
+                      comicId={comic.id}
+                      onRefresh={() => refreshComic()}
+                      onPanelAction={changePanels}
+                      setError={setError}
                     />
-                  </label>
-                  <label>Size
-                    <input type="range" min="10" max="28" value={selected.fs || 13} onChange={(event) => changeItem(selected.id, { fs: Number(event.target.value) })} onMouseUp={() => recordItems(items)} />
-                  </label>
-                </>
-              )}
-              <button className="btn g sm" style={{ marginTop: 8 }} onClick={deleteSelected}>Delete</button>
-            </>
-          ) : <span className="mu">Select an object on the canvas.</span>}
-        </div>
-      </div>
-
-      <div className="card ai" style={{ marginTop: 10 }}>
-        <form className="row" onSubmit={proposeEdit}>
-          <input
-            value={command}
-            onChange={(event) => setCommand(event.target.value)}
-            placeholder="Try: make the final panel larger, add storm clouds, change kaito’s expression to anger"
-            style={{ flex: 1, minWidth: 200 }}
-            aria-label="AI command"
-          />
-          <button className="btn" type="submit" disabled={busy}>{busy ? 'Proposing…' : 'Propose edit'}</button>
-        </form>
-        <div style={{ marginTop: 8 }}>
-          {busy && <div className="scan" style={{ height: 40 }} />}
-          {!busy && command.trim() && !proposal && (
-            <span className="mu">That command is not supported in this demo. Try “make the final panel larger”, “add storm clouds” or “change Kaito’s expression to anger”.</span>
-          )}
-          {proposal && (
-            <>
-              <div className="row">
-                <span>Proposal: {proposal.label}</span>
-                <button className="btn sm" onClick={applyProposal}>Apply</button>
-                <button className="btn g sm" onClick={() => setProposal(null)}>Reject</button>
-              </div>
-              <div className="mu" style={{ fontSize: 12 }}>No image is generated: this demo changes layout and labels only.</div>
-            </>
-          )}
-        </div>
-      </div>
-    </>
+                  ))}
+                </div>
+              </main>
+            ) : (
+              <section className="card comic-main comic-empty">
+                <h2>No comic selected</h2>
+                <p className="mu">Choose a saved comic or create one from a story.</p>
+              </section>
+            )}
+            {comic && <aside className="comic-preview-column">
+              <div className="row sp"><b>Page preview</b><span className="mu">{comic.panels.length} panels</span></div>
+              <ComicPreview comic={comic} />
+            </aside>}
+          </div>
+        </>
+      )}
+    </div>
   );
 }

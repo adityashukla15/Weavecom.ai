@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from threading import Lock
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -34,6 +35,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version="1.0.0",
         description="PanelVerse AI backend foundation.",
     )
+    application.state.settings = application_settings
+    application.state.supabase_client = None
+    application.state.supabase_client_lock = Lock()
 
     application.add_middleware(
         CORSMiddleware,
