@@ -65,7 +65,7 @@ class FakeDatabase:
         return FakeQuery(self.rows)
 
 
-def make_client(role: UserRole = UserRole.WRITER) -> tuple[TestClient, FakeDatabase, pytest.MonkeyPatch]:
+def make_client(role: UserRole | None = UserRole.WRITER) -> tuple[TestClient, FakeDatabase, pytest.MonkeyPatch]:
     from app.api.v1.endpoints import characters as character_endpoint
 
     database = FakeDatabase()
@@ -91,7 +91,7 @@ def make_client(role: UserRole = UserRole.WRITER) -> tuple[TestClient, FakeDatab
     return TestClient(app), database, monkeypatch
 
 
-def test_writer_creates_project_with_server_derived_owner_and_lists_it() -> None:
+def test_authenticated_user_creates_project_with_server_derived_owner_and_lists_it() -> None:
     client, database, monkeypatch = make_client()
     headers = {"Authorization": "Bearer mocked-access-token"}
     try:
@@ -117,16 +117,17 @@ def test_writer_creates_project_with_server_derived_owner_and_lists_it() -> None
         client.close()
 
 
-def test_reader_cannot_create_project() -> None:
-    client, database, monkeypatch = make_client(UserRole.READER)
+def test_authenticated_user_without_role_can_create_owned_project() -> None:
+    client, database, monkeypatch = make_client(None)
     try:
         response = client.post(
             "/api/v1/projects",
             headers={"Authorization": "Bearer mocked-access-token"},
-            json={"title": "Reader project"},
+            json={"title": "My project"},
         )
-        assert response.status_code == 403
-        assert database.rows == []
+        assert response.status_code == 201
+        assert response.json()["owner_id"] == WRITER_ID
+        assert database.rows[0]["owner_id"] == WRITER_ID
     finally:
         monkeypatch.undo()
         client.close()

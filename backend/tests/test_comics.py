@@ -140,7 +140,7 @@ class FakeDatabase:
 
 
 def make_client(
-    role: UserRole = UserRole.WRITER,
+    role: UserRole | None = UserRole.WRITER,
 ) -> tuple[TestClient, FakeDatabase, pytest.MonkeyPatch]:
     from app.api.v1.endpoints import characters as character_endpoints
 
@@ -244,8 +244,8 @@ def test_writer_cannot_create_comic_from_another_writers_story() -> None:
         client.close()
 
 
-def test_reader_cannot_create_or_modify_comics() -> None:
-    client, database, monkeypatch = make_client(UserRole.READER)
+def test_authenticated_user_without_role_can_create_comics_for_owned_stories() -> None:
+    client, database, monkeypatch = make_client(None)
     try:
         response = client.post(
             "/api/v1/comics",
@@ -253,8 +253,8 @@ def test_reader_cannot_create_or_modify_comics() -> None:
             json={"story_id": STORY_ID, "title": "Reader attempt"},
         )
 
-        assert response.status_code == 403
-        assert database.tables["comics"] == []
+        assert response.status_code == 201
+        assert database.tables["comics"][0]["story_id"] == STORY_ID
     finally:
         monkeypatch.undo()
         client.close()

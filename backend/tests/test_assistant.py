@@ -43,6 +43,10 @@ class FakeQuery:
         self.filters.append(("eq", column, value))
         return self
 
+    def or_(self, filters: str) -> FakeQuery:
+        self.filters.append(("or", "", filters))
+        return self
+
     def in_(self, column: str, values: list[Any]) -> FakeQuery:
         self.filters.append(("in", column, values))
         return self
@@ -60,7 +64,11 @@ class FakeQuery:
             row for row in rows
             if all(
                 row.get(column) == value if operation == "eq"
-                else row.get(column) in value
+                else row.get(column) in value if operation == "in"
+                else (
+                    row.get("owner_id") == value.split("owner_id.eq.", 1)[1].split(",", 1)[0]
+                    or row.get("status") == "published"
+                )
                 for operation, column, value in self.filters
             )
         ]
@@ -123,9 +131,10 @@ class FakeProvider:
 
 
 def build_client(
-    role: UserRole = UserRole.WRITER,
+    role: UserRole | None = UserRole.WRITER,
     *,
     provider: FakeProvider | None = None,
+    user_id: str = WRITER_ID,
 ) -> tuple[TestClient, FakeDatabase, pytest.MonkeyPatch, FakeProvider]:
     from app.api.v1.endpoints import assistant as assistant_endpoint
     from app.api.v1.endpoints import characters as character_endpoint
@@ -141,7 +150,7 @@ def build_client(
         supabase_publishable_key="test-publishable-key",
     ))
     app.dependency_overrides[get_current_user] = lambda: AuthenticatedUser(
-        id=WRITER_ID,
+        id=user_id,
         role=role,
     )
     fake_provider = provider or FakeProvider()
@@ -171,7 +180,7 @@ def test_retrieval_is_keyword_relevant_bounded_and_project_scoped() -> None:
         retrieve_project_context(
             database,
             project_id=UUID(PROJECT_ID),
-            is_reader=False,
+            published_only=False,
             question="What is Mira's personality and dragon encounter?",
         )
     )
@@ -185,8 +194,8 @@ def test_retrieval_is_keyword_relevant_bounded_and_project_scoped() -> None:
     assert "I will protect the city!" in result.text
 
 
-def test_writer_can_ask_using_project_content_and_get_source_references() -> None:
-    client, _database, monkeypatch, provider = build_client()
+def test_authenticated_user_without_role_can_ask_and_get_source_references() -> None:
+    client, _database, monkeypatch, provider = build_client(None)
     try:
         response = client.post(
             "/api/v1/assistant/ask",
@@ -206,8 +215,8 @@ def test_writer_can_ask_using_project_content_and_get_source_references() -> Non
         client.close()
 
 
-def test_reader_sees_only_published_project_content() -> None:
-    client, _database, monkeypatch, provider = build_client(UserRole.READER)
+def test_non_owner_sees_only_published_project_content() -> None:
+    client, _database, monkeypatch, provider = build_client(None, user_id="reader-id")
     try:
         response = client.post(
             "/api/v1/assistant/ask",
@@ -226,8 +235,8 @@ def test_reader_sees_only_published_project_content() -> None:
         client.close()
 
 
-def test_reader_cannot_ask_about_unpublished_project() -> None:
-    client, _database, monkeypatch, provider = build_client(UserRole.READER)
+def test_non_owner_cannot_ask_about_unpublished_project() -> None:
+    client, _database, monkeypatch, provider = build_client(None, user_id="reader-id")
     try:
         response = client.post(
             "/api/v1/assistant/ask",
@@ -243,7 +252,7 @@ def test_reader_cannot_ask_about_unpublished_project() -> None:
 
 
 def test_writer_can_retrieve_unpublished_story_in_owned_project() -> None:
-    client, _database, monkeypatch, provider = build_client()
+    client, _database, monkeypatch, provider = build_client(None)
     try:
         response = client.post(
             "/api/v1/assistant/ask",

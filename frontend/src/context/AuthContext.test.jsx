@@ -37,13 +37,14 @@ vi.mock('../api/supabase.js', () => ({
 }));
 
 function AuthControls() {
-  const { status, user, signIn, signUp } = useAuth();
+  const { status, user, signIn, signUp, signOut } = useAuth();
   return (
     <div>
       <span data-testid="status">{status}</span>
       <span data-testid="role">{user?.role ?? 'none'}</span>
       <button onClick={() => signIn('writer@example.test', 'password')}>Sign in</button>
       <button onClick={() => signUp('new@example.test', 'password')}>Sign up</button>
+      <button onClick={() => signOut()}>Sign out</button>
     </div>
   );
 }
@@ -101,5 +102,29 @@ describe('AuthProvider integration', () => {
 
     await waitFor(() => expect(mocks.signUp).toHaveBeenCalledWith('new@example.test', 'password'));
     expect(mocks.getProfile).not.toHaveBeenCalled();
+  });
+
+  it('clears authenticated state and the local token on sign out', async () => {
+    const subscription = { unsubscribe: vi.fn() };
+    mocks.getSession.mockResolvedValue({ data: { session: null }, error: null });
+    mocks.onAuthStateChange.mockReturnValue({ data: { subscription } });
+    mocks.signIn.mockResolvedValue({
+      data: { session: { access_token: 'writer-token' } },
+      error: null,
+    });
+    mocks.getProfile.mockResolvedValue({ id: 'writer-id' });
+    mocks.signOut.mockResolvedValue({ error: null });
+
+    render(<AuthProvider><AuthControls /></AuthProvider>);
+    await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('unauthenticated'));
+    fireEvent.click(screen.getByText('Sign in'));
+    await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('authenticated'));
+
+    fireEvent.click(screen.getByText('Sign out'));
+
+    await waitFor(() => expect(screen.getByTestId('status').textContent).toBe('unauthenticated'));
+    expect(mocks.signOut).toHaveBeenCalled();
+    expect(mocks.clearAccessToken).toHaveBeenCalled();
+    expect(screen.getByTestId('role').textContent).toBe('none');
   });
 });

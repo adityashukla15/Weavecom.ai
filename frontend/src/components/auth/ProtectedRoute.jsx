@@ -14,7 +14,7 @@ function AuthStatus({ message, error, onRetry }) {
 }
 
 export function RequireAuth() {
-  const { status, user, authError, retryProfile } = useAuth();
+  const { status, authError, retryProfile } = useAuth();
   const location = useLocation();
 
   if (status === 'loading') {
@@ -29,14 +29,5 @@ export function RequireAuth() {
   if (status !== 'authenticated') {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
-  if (!user?.role) {
-    return <Navigate to="/access-pending" replace />;
-  }
-  return <Outlet />;
-}
-
-export function RequireRole({ roles }) {
-  const { user } = useAuth();
-  if (!roles.includes(user?.role)) return <Navigate to="/forbidden" replace />;
   return <Outlet />;
 }

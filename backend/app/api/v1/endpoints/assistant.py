@@ -17,7 +17,7 @@ from app.schemas.assistant import (
     ProjectAssistantAnswer,
     ProjectAssistantQuestion,
 )
-from app.schemas.auth import AuthenticatedUser, UserRole
+from app.schemas.auth import AuthenticatedUser
 from app.services.project_assistant import execute_query, retrieve_project_context
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
@@ -38,11 +38,6 @@ def get_assistant_context(
     ],
     user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> AssistantContext:
-    if user.role not in {UserRole.WRITER, UserRole.READER}:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your account does not have permission to use the project assistant.",
-        )
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -66,12 +61,13 @@ def get_assistant_context(
 async def list_assistant_projects(
     context: Annotated[AssistantContext, Depends(get_assistant_context)],
 ) -> list[AssistantProject]:
-    query = context.client.table("projects").select("id,title,status")
-    if context.user.role == UserRole.WRITER:
-        query = query.eq("owner_id", context.user.id)
-    else:
-        query = query.eq("status", "published")
-    result = await execute_query(query.order("updated_at", desc=True).limit(50))
+    result = await execute_query(
+        context.client.table("projects")
+        .select("id,title,status")
+        .or_(f"owner_id.eq.{context.user.id},status.eq.published")
+        .order("updated_at", desc=True)
+        .limit(50)
+    )
     return [AssistantProject.model_validate(row) for row in result.data]
 
 
@@ -83,13 +79,12 @@ async def ask_project_assistant(
 ) -> ProjectAssistantAnswer:
     project_query = (
         context.client.table("projects")
-        .select("id,status")
+        .select("id,status,owner_id")
         .eq("id", str(payload.project_id))
     )
-    if context.user.role == UserRole.WRITER:
-        project_query = project_query.eq("owner_id", context.user.id)
-    else:
-        project_query = project_query.eq("status", "published")
+    project_query = project_query.or_(
+        f"owner_id.eq.{context.user.id},status.eq.published"
+    )
     project_result = await execute_query(project_query.limit(1))
     if not project_result.data:
         raise HTTPException(
@@ -97,10 +92,13 @@ async def ask_project_assistant(
             detail="The requested project was not found.",
         )
 
+    project = project_result.data[0]
+    published_only = project["owner_id"] != context.user.id
+
     retrieved = await retrieve_project_context(
         context.client,
         project_id=payload.project_id,
-        is_reader=context.user.role == UserRole.READER,
+        published_only=published_only,
         question=payload.question,
     )
     if not retrieved.text:

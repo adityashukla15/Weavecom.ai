@@ -10,9 +10,9 @@ from postgrest.exceptions import APIError
 from starlette.concurrency import run_in_threadpool
 from supabase import Client
 
-from app.core.auth import bearer_scheme, require_roles
+from app.core.auth import bearer_scheme, get_current_user
 from app.integrations.supabase.client import create_user_scoped_supabase_client
-from app.schemas.auth import AuthenticatedUser, UserRole
+from app.schemas.auth import AuthenticatedUser
 from app.schemas.characters import (
     CharacterCreate,
     CharacterProject,
@@ -21,7 +21,6 @@ from app.schemas.characters import (
 )
 
 router = APIRouter(prefix="/characters", tags=["characters"])
-require_writer = require_roles(UserRole.WRITER)
 
 
 @dataclass(frozen=True)
@@ -36,7 +35,7 @@ def get_character_context(
         HTTPAuthorizationCredentials | None,
         Depends(bearer_scheme),
     ],
-    user: Annotated[AuthenticatedUser, Depends(require_writer)],
+    user: Annotated[AuthenticatedUser, Depends(get_current_user)],
 ) -> CharacterContext:
     if credentials is None:
         raise HTTPException(

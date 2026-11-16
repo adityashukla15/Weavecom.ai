@@ -59,7 +59,7 @@ async def retrieve_project_context(
     client: Any,
     *,
     project_id: UUID,
-    is_reader: bool,
+    published_only: bool,
     question: str,
 ) -> RetrievedProjectContext:
     stories_query = (
@@ -69,7 +69,7 @@ async def retrieve_project_context(
         .order("updated_at", desc=True)
         .limit(MAX_STORIES)
     )
-    if is_reader:
+    if published_only:
         stories_query = stories_query.eq("status", "published")
     stories = (await execute_query(stories_query)).data
     story_ids = [row["id"] for row in stories]

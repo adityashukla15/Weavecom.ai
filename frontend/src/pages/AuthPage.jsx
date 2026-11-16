@@ -5,9 +5,17 @@ import { isApiConfigured } from '../api/client.js';
 import { supabaseConfigurationError } from '../api/supabase.js';
 import { useAuth } from '../context/AuthContext.jsx';
 
+function getAuthErrorMessage(error) {
+  if (error instanceof TypeError || error?.name === 'AbortError') {
+    return getErrorMessage(error);
+  }
+  if (error instanceof Error && error.message) return error.message;
+  return getErrorMessage(error);
+}
+
 export default function AuthPage({ mode }) {
   const isSignUp = mode === 'signup';
-  const { status, user, signIn, signUp } = useAuth();
+  const { status, signIn, signUp } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState('');
@@ -17,10 +25,7 @@ export default function AuthPage({ mode }) {
   const [error, setError] = useState('');
 
   if (status === 'authenticated') {
-    return <Navigate
-      to={location.state?.from?.pathname || (user?.role === 'reader' ? '/community' : '/dashboard')}
-      replace
-    />;
+    return <Navigate to={location.state?.from?.pathname || '/dashboard'} replace />;
   }
   if (status === 'loading') {
     return (
@@ -42,22 +47,16 @@ export default function AuthPage({ mode }) {
       if (isSignUp) {
         const result = await signUp(email.trim(), password);
         if (!result.session) {
-          setMessage('Check your email to confirm your account, then sign in. A trusted administrator must assign your Writer or Reader role.');
+          setMessage('Check your email to confirm your account, then sign in.');
           return;
         }
-        navigate(
-          location.state?.from?.pathname || (result.profile?.role === 'reader' ? '/community' : '/dashboard'),
-          { replace: true },
-        );
+        navigate(location.state?.from?.pathname || '/dashboard', { replace: true });
       } else {
-        const result = await signIn(email.trim(), password);
-        navigate(
-          location.state?.from?.pathname || (result.profile?.role === 'reader' ? '/community' : '/dashboard'),
-          { replace: true },
-        );
+        await signIn(email.trim(), password);
+        navigate(location.state?.from?.pathname || '/dashboard', { replace: true });
       }
     } catch (cause) {
-      setError(getErrorMessage(cause));
+      setError(getAuthErrorMessage(cause));
     } finally {
       setBusy(false);
     }
@@ -70,7 +69,7 @@ export default function AuthPage({ mode }) {
         <h1>{isSignUp ? 'Create your account' : 'Welcome back'}</h1>
         <p className="mu">
           {isSignUp
-            ? 'Create an account to continue. Your access role is assigned by an administrator.'
+            ? 'Create an account to continue to PanelVerse AI.'
             : 'Sign in to continue to PanelVerse AI.'}
         </p>
         {(supabaseConfigurationError || !isApiConfigured) && (

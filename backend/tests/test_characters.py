@@ -114,7 +114,7 @@ class FakeDatabase:
         return FakeQuery(self, name)
 
 
-def make_client(role: UserRole = UserRole.WRITER) -> tuple[TestClient, FakeDatabase]:
+def make_client(role: UserRole | None = UserRole.WRITER) -> tuple[TestClient, FakeDatabase]:
     from app.api.v1.endpoints import characters as character_endpoints
 
     database = FakeDatabase()
@@ -215,15 +215,15 @@ def test_writer_cannot_associate_character_with_another_writers_project() -> Non
         close_client(client)
 
 
-def test_reader_cannot_use_character_management_routes() -> None:
-    client, database = make_client(UserRole.READER)
+def test_authenticated_user_without_role_can_use_owned_character_routes() -> None:
+    client, database = make_client(None)
     try:
         response = client.get(
             "/api/v1/characters",
             headers={"Authorization": "Bearer mocked-access-token"},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 200
         assert database.tables["characters"] == []
     finally:
         close_client(client)

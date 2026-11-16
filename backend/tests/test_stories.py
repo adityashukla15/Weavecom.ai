@@ -115,7 +115,7 @@ class FakeDatabase:
         return FakeQuery(self, name)
 
 
-def make_client(role: UserRole = UserRole.WRITER) -> tuple[TestClient, FakeDatabase, pytest.MonkeyPatch]:
+def make_client(role: UserRole | None = UserRole.WRITER) -> tuple[TestClient, FakeDatabase, pytest.MonkeyPatch]:
     from app.api.v1.endpoints import characters as character_endpoints
 
     database = FakeDatabase()
@@ -265,15 +265,15 @@ def test_multiple_stories_in_a_project_get_distinct_sort_order() -> None:
         client.close()
 
 
-def test_reader_cannot_use_story_management_routes() -> None:
-    client, database, monkeypatch = make_client(UserRole.READER)
+def test_authenticated_user_without_role_can_use_owned_story_routes() -> None:
+    client, database, monkeypatch = make_client(None)
     try:
         response = client.get(
             "/api/v1/stories",
             headers={"Authorization": "Bearer mocked-access-token"},
         )
 
-        assert response.status_code == 403
+        assert response.status_code == 200
         assert database.tables["stories"] == []
     finally:
         monkeypatch.undo()

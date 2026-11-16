@@ -21,9 +21,7 @@ export default function AppLayout() {
   const { user, signOut } = useAuth();
   const toast = useToast();
   const isHome = pathname === '/';
-  const navigation = user?.role === 'reader'
-    ? [['assistant', 'Project Assistant', 'burst'], ['community', 'Community', 'user']]
-    : writerNavigation;
+  const navigation = writerNavigation;
   const showNavigation = !isHome;
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -80,14 +78,13 @@ export default function AppLayout() {
                 <Icon name={icon} size={17} /> {label}
               </NavLink>
             ))}
-            {user?.role === 'writer' && ['Assets', 'Settings'].map((label) => (
+            {['Assets', 'Settings'].map((label) => (
               <button className="sl" key={label} onClick={() => toast(`${label} is not built in this demo`)}>
                 <Icon name="burst" size={17} /> {label}
               </button>
             ))}
             <div className="auth-nav-account">
               <span className="mu">{user?.email}</span>
-              <span className="tag">{user?.role}</span>
               <button className="sl" type="button" onClick={handleSignOut}>Sign out</button>
             </div>
           </div>
